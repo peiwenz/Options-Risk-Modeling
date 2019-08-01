@@ -1,0 +1,91 @@
+from math import *
+def ewma(i,l,category,z_score,rollingdays):
+    data = pd.DataFrame(get_truncated_datalist(category)[i], columns=['TradingDay','Code','MaturityMonth','SettlementPrice','contractsize','psr','vsr'])
+    data = data.copy()    
+    data = data.sort_values(by = 'TradingDay', ascending = True)
+    data = data.dropna(axis=0, how='any')
+    data = data[~data['SettlementPrice'].isin([0])]
+    data['ret'] = (data['SettlementPrice'].shift(-1) - data['SettlementPrice']) / data['SettlementPrice']
+    data['price']=data['ret']*data['SettlementPrice']*data['contractsize']
+    #mu get 100 days
+    data['mu']=data['ret'].ewm(l,min_periods=rollingdays).mean()
+    data['std']=data['ret'].ewm(l,min_periods=rollingdays).std()
+    data['ewma']=(data['mu']+z_score*data['std'])*data['contractsize']*data['SettlementPrice']
+    data['ewma99']=data['ewma'].rolling(rollingdays).quantile(0.95)
+    data=data.dropna()
+    
+    
+    
+    data['ewma99'].plot(figsize=(20,8),label = "ewma99")
+    data['psr'].plot(figsize=(20,8),label = "psr")
+    data['price'].plot(figsize=(20,8),label = "price")
+    plt.legend(loc='upper left')
+    plt.gca().invert_xaxis()
+    plt.show()
+    
+    e=abs(data['ewma99']-data['psr'])/data['psr']
+    e=np.array(list(e)).mean()
+    
+    #error=(abs(data['ewma99']-data['psr'])).mean()/data['psr'].mean()
+    
+    return e
+
+def var(i,category,z_score,rollingdays):
+    data = pd.DataFrame(get_truncated_datalist(category)[i], columns=['TradingDay','Code','MaturityMonth','SettlementPrice','contractsize','psr','vsr'])
+    data = data.copy()    
+    data = data.sort_values(by = 'TradingDay', ascending = True)
+    data = data.dropna(axis=0, how='any')
+    data = data[~data['SettlementPrice'].isin([0])]
+    data['ret'] = (data['SettlementPrice'].shift(-1) - data['SettlementPrice']) / data['SettlementPrice']
+    data['std'] = data['ret'].rolling(rollingdays).std()
+    k=data['ret'].kurt()
+    s=data['ret'].skew()
+    data['mu']=data['ret'].rolling(rollingdays).mean()
+    data['upperbond'] = data['mu']+(data['std']*(((k+2)/s)+sqrt(((k+2)/s)**2+(4*(z_score*sqrt((k+2)*(k+2-s**2)))/abs(s)) +1))/2)
+    data['lowerbond'] = data['mu']+(data['std']*(((k+2)/s)-sqrt(((k+2)/s)**2+(4*(z_score*sqrt((k+2)*(k+2-s**2)))/abs(s)) +1))/2)
+    data['abslow']=abs(data['lowerbond'])
+    data['var']=data[["abslow", "upperbond"]].min(axis=1).rolling(rollingdays).quantile(0.99)*data['contractsize']*data['SettlementPrice']
+    #data['price']=data['ret']*data['SettlementPrice']*data['contractsize']
+    
+    data=data.dropna()
+    
+    #data['price'].plot(figsize=(20,8),label = "price")
+    #data['psr'].plot(figsize=(20,8),label = "psr")
+    #data['var'].plot(figsize=(20,8),label = "var")
+    #plt.legend(loc='upper left')
+    #plt.show()
+    
+    e=abs(data['var']-data['psr'])/data['psr']
+    e=np.array(list(e)).mean()
+    return e
+
+def cvar(i,category,z_score,rollingdays):
+    data = pd.DataFrame(get_truncated_datalist(category)[i], columns=['TradingDay','Code','MaturityMonth','SettlementPrice','contractsize','psr','vsr'])
+    data = data.copy()    
+    data = data.sort_values(by = 'TradingDay', ascending = True)
+    data = data.dropna(axis=0, how='any')
+    data = data[~data['SettlementPrice'].isin([0])]
+    data['ret'] = (data['SettlementPrice'].shift(-1) - data['SettlementPrice']) / data['SettlementPrice']
+    data['std'] = data['ret'].rolling(rollingdays).std()
+    k=data['ret'].kurt()
+    s=data['ret'].skew()
+    data['price']=data['ret']*data['contractsize']*data['SettlementPrice']
+    data['mu']=data['ret'].rolling(rollingdays).mean()
+    data['upperbond'] = data['mu']+(data['std']*(((k+2)/s)+sqrt(((k+2)/s)**2+(4*(z_score*sqrt((k+2)*(k+2-s**2)))/abs(s)) +1))/2)
+    data['lowerbond'] = data['mu']+(data['std']*(((k+2)/s)-sqrt(((k+2)/s)**2+(4*(z_score*sqrt((k+2)*(k+2-s**2)))/abs(s)) +1))/2)
+    data['abslow']=abs(data['lowerbond'])
+    data['var']=data[["abslow", "upperbond"]].min(axis=1).rolling(rollingdays).quantile(0.99)*data['contractsize']*data['SettlementPrice']*1.25
+    
+    data['cvar']=(0.99*data['var']+0.01*data[["abslow", "upperbond"]].min(axis=1).rolling(rollingdays).quantile(1)*data['contractsize']*data['SettlementPrice'])*1.25
+    data=data.dropna()
+    #data['cvar']=abs(-data['mu']+(data['std']/(z_score*np.sqrt(2*np.pi)))*np.exp((-1/2)*(((data['var']-data['mu']))/data['std'])**2))*data['contractsize']*data['SettlementPrice']
+    #data['price'].plot(figsize=(20,8),label = "price")
+    data['psr'].plot(figsize=(20,8),label = "psr")
+    data['cvar'].plot(figsize=(20,8),label = "cvar")
+    plt.legend(loc='upper left')
+    plt.gca().invert_xaxis()
+    plt.show()
+    
+    e=abs(data['cvar']-data['psr'])/data['psr']
+    e=np.array(list(e)).mean()
+    return e
